@@ -763,13 +763,44 @@ problems at github.")
 (defvar which-key--god-mode-key-string nil
   "Holds key string to use for god-mode support.")
 
+(defvar which-key--god-mode-skip-key-prompt nil
+  "Key sequence entered until now is echoed if
+`which-key--god-mode-skip-key-prompt' is nil. This is needed as `god-mode'
+will echo the current key sequence, which will overwrite the prompt message
+set by `which-key--process-page'.")
+
 (defun which-key--god-mode-lookup-command-advice (orig-fn &rest args)
   "Advice function for `god-mode-lookup-command'."
-  (setq which-key--god-mode-key-string (car args))
+  (setq which-key--god-mode-key-string (car args)
+        which-key--god-mode-skip-key-prompt nil)
   (unwind-protect
       (apply orig-fn args)
     (when (bound-and-true-p which-key-mode)
       (which-key--hide-popup))))
+
+;; FIXME Page shown by `which-key-undo' is overwritten by timer.
+(defun which-key--god-mode-lookup-key-sequence-advice (orig-fn &rest args)
+  "Advice function for `god-mode-lookup-key-sequence'.
+Reads a key event and invokes `which-key-C-h-dispatch' if the key entered is
+`help-char'."
+  (if (and (> (length args) 1)
+           (null (car args)))
+      (let* ((key-string-so-far (cadr args))
+             (key-event (read-event
+                         (unless which-key--god-mode-skip-key-prompt
+                           key-string-so-far)))
+             (sanitized-key (god-mode-sanitized-key-string key-event)))
+        (if (eq key-event help-char)
+            (progn
+              (setq which-key--god-mode-skip-key-prompt t)
+              (which-key-C-h-dispatch)
+              ;; Discard last prefix input. `discard-input' cannot be used
+              ;; here as it ends any macro being defined.
+              (setq unread-command-events nil)
+              (which-key--god-mode-lookup-key-sequence-advice
+               orig-fn nil key-string-so-far))
+          (apply orig-fn (list key-event key-string-so-far))))
+    (apply orig-fn args)))
 
 (defun which-key-enable-god-mode-support (&optional disable)
   "Enable support for god-mode if non-nil. This is experimental,
@@ -779,9 +810,13 @@ problems at github. If DISABLE is non-nil disable support."
   (setq which-key--god-mode-support-enabled (null disable))
   (cond (which-key--god-mode-support-enabled
          (advice-add 'god-mode-lookup-command
-                     :around #'which-key--god-mode-lookup-command-advice))
+                     :around #'which-key--god-mode-lookup-command-advice)
+         (advice-add 'god-mode-lookup-key-sequence
+                     :around #'which-key--god-mode-lookup-key-sequence-advice))
         (t (advice-remove 'god-mode-lookup-command
-                          #'which-key--god-mode-lookup-command-advice))))
+                          #'which-key--god-mode-lookup-command-advice)
+           (advice-remove 'god-mode-lookup-key-sequence
+                          #'which-key--god-mode-lookup-key-sequence-advice))))
 
 ;;; Mode
 
