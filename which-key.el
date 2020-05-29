@@ -793,6 +793,7 @@ Reads a key event and invokes `which-key-C-h-dispatch' if the key entered is
         (if (eq key-event help-char)
             (progn
               (setq which-key--god-mode-skip-key-prompt t)
+              (which-key--stop-timer)
               (which-key-C-h-dispatch)
               ;; Discard last prefix input. `discard-input' cannot be used
               ;; here as it ends any macro being defined.
